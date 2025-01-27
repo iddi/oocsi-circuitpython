@@ -9,7 +9,7 @@ import json
 import random
 import asyncio
 
-__author__ = 'matsfunk'
+__author__ = 'matsfunk, cyanogenbot'
 
 
 class OOCSI:

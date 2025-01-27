@@ -8,7 +8,7 @@ import asyncio
 import adafruit_esp32spi.adafruit_esp32spi_socketpool as socketpool
 
 
-__author__ = '@Cyanogenbot'
+__author__ = 'matsfunk, cyanogenbot'
 
 
 class OOCSI:
