@@ -11,7 +11,7 @@ network = wifi.radio
 async def checkMessages():
     while True:
         try:
-            await o.check()
+            await o.asyncCheck()
         except Exception as e:
             print(f"Error in checkMessages: {str(e)}")
         await asyncio.sleep(0.2)

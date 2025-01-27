@@ -4,11 +4,7 @@
 import time
 import json
 import random
-import board
 import asyncio
-import busio
-from digitalio import DigitalInOut
-from adafruit_esp32spi import adafruit_esp32spi
 import adafruit_esp32spi.adafruit_esp32spi_socketpool as socketpool
 
 
@@ -123,7 +119,7 @@ class OOCSI:
             self.sock.send((msg + '\n').encode())
         except:
             self.connected = False
-
+        
     def check(self):
         """
         Checks for incoming messages from the server and processes them.
@@ -143,6 +139,62 @@ class OOCSI:
                     self.receive(json.loads(line))
         except:
             pass
+    
+    async def asyncCheck(self):
+        """
+        Asynchronously checks for incoming messages from the server and processes them.
+        """
+        try:
+            buffer = bytearray(1024)
+            try:
+                # Create asynchronous task to check for new messages
+                socket_task = asyncio.create_task(self._recv_into(buffer))
+                received_bytes = await socket_task
+
+                if received_bytes == 0:  # Connection closed by peer
+                    self.sock.close()
+                    self.connected = False
+                    return
+
+                data = buffer[:received_bytes].decode('utf-8')
+                lines = data.split("\n")
+                for line in lines:
+                    if line.startswith('ping') or line.startswith('.'):
+                        self.internalSend('.')
+                    elif line.startswith('{'):
+                        self.receive(json.loads(line))
+            except OSError as e:
+                if e.args[0] == 11:  # EAGAIN error
+                    pass  # No data available right now, that's okay
+                else:
+                    raise  # Re-raise other OSError types
+            except ConnectionError:
+                self.sock.close()
+                self.connected = False
+        except Exception as e:
+            self.log(f"Error in check: {str(e)}")
+            pass
+
+    async def asyncLoop(self):
+        """Looping function to keep checking for oocsi updates every .2 seconds"""
+        while True:
+            try:
+                await self.asyncCheck()
+            except Exception as e:
+                print(f"Error in checkMessages: {str(e)}")
+            await asyncio.sleep(0.2)
+
+    async def keepAlive(self):
+        """Function to initiate the asynchronous loop"""
+        messages = asyncio.create_task(self._async_loop())
+        # Run both tasks at the same time independently from eachother
+        await asyncio.gather(messages)
+
+    async def _recv_into(self, buffer):
+        """
+        Helper method to handle socket receive operations asynchronously.
+        """
+        return self.sock.recv_into(buffer)
 
     def receive(self, event):
         """
