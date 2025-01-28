@@ -1,3 +1,5 @@
+# Asynchronous OOCSI example
+
 # Import basics
 import board
 import digitalio
@@ -17,6 +19,10 @@ from oocsi import OOCSI
 esp32_cs = digitalio.DigitalInOut(board.D9)
 esp32_ready = digitalio.DigitalInOut(board.D11)
 esp32_reset = digitalio.DigitalInOut(board.D12)
+
+# Define led pins
+led = digitalio.DigitalInOut(board.D13)
+led.direction = digitalio.Direction.OUTPUT
 
 # Define ESP32 connection
 spi = busio.SPI(board.SCK, board.MOSI, board.MISO)
@@ -48,8 +54,6 @@ while not esp.is_connected:
 # When a network is found, the esp will reply with its ip address
 print("Connected! IP address:", esp.pretty_ip(esp.ip_address))
 
-# after connecting to the wifi the main loop starts which checks its connection to DataFoundry
-
 # Define an asynchronous blink function
 async def blink():
     while True:
@@ -63,4 +67,5 @@ async def loop():
     asyncio.create_task(blink())
     await oocsi.keepAlive()
 
+# Start loop
 asyncio.run(loop())
