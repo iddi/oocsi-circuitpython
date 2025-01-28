@@ -1,4 +1,6 @@
-# Asynchronous OOCSI example
+# OOCSI Asynchonous communication example
+# This example on works on devices with an external esp32 module which works with esp32spi
+# Example boards: RP2040 Nano Connect, Connected Interaction Kit, Lolin S3
 
 # Import basics
 import board
