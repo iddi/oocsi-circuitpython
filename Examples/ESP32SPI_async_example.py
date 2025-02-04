@@ -15,7 +15,7 @@ import busio
 from adafruit_esp32spi import adafruit_esp32spi
 
 # Import oocsi
-from oocsi import OOCSI
+from oocsi_esp32spi import OOCSI
 
 # Define & initialize ESP32 connection pins
 esp32_cs = digitalio.DigitalInOut(board.D9)
