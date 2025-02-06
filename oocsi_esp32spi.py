@@ -1,15 +1,14 @@
 # Copyright (c) 2025 Mathias Funk
 # This software is released under the MIT License.
 # http://opensource.org/licenses/mit-license.php
-
-import wifi
-import socketpool
 import time
 import json
 import random
 import asyncio
+import adafruit_esp32spi.adafruit_esp32spi_socketpool as socketpool
 
-__author__ = 'matsfunk'
+
+__author__ = 'matsfunk, cyanogenbot'
 
 
 class OOCSI:
@@ -17,7 +16,7 @@ class OOCSI:
     OOCSI class for managing communication with an OOCSI server.
     """
 
-    def __init__(self, handle=None, host='localhost', port=4444, callback=None):
+    def __init__(self, handle=None, host='localhost', esp=None , port=4444, callback=None):
         """
         Initializes the OOCSI client and connects to the server.
 
@@ -33,6 +32,8 @@ class OOCSI:
             handle = handle.replace("#", str(random.randrange(10)), 1)
         self.handle = handle
 
+        self.esp = esp
+
         self.receivers = {self.handle: [callback]}
         self.calls = {}
         self.services = {}
@@ -44,6 +45,8 @@ class OOCSI:
         self.log('connecting to %s port %s' % self.server_address)
         self.init()
 
+        self.tasks = []
+
         # Block till we are connected
         while not self.connected:
             time.sleep(0.2)
@@ -53,14 +56,18 @@ class OOCSI:
         Initializes the socket connection to the OOCSI server.
         """
         try:
-            # Create a socket pool
-            pool = socketpool.SocketPool(wifi.radio)
+            if self.esp.is_connected:
 
-            # Create a TCP/IP socket
-            self.sock = pool.socket(type=pool.SOCK_STREAM, proto=pool.IPPROTO_TCP)
-
-            # Connect to the server
-            self.sock.connect(self.server_address)
+                # Create a socket pool
+                # pool = socketpool.SocketPool(wifi.radio)
+                self.pool = socketpool.SocketPool(self.esp)
+                # Create a TCP/IP socket
+                address = self.pool.getaddrinfo(self.server_address[0],self.server_address[1])[0][4]
+                self.sock = self.pool.socket(type=self.pool.SOCK_STREAM, proto=self.pool.AF_INET)
+                # self.sock.settimeout(5)
+                # Connect to the server
+                self.sock.connect(address)
+                self.log("Connecting to server")
 
             try:
                 # Send initial data to establish connection
@@ -76,12 +83,11 @@ class OOCSI:
                     pass
 
                 if data.startswith('{'):
-                    self.log('connection established')
+                    self.log('Connection established')
                     # Re-subscribe to channels
                     for channelName in self.receivers:
                         self.internalSend('subscribe {0}'.format(channelName))
                     self.connected = True
-                    self.sock.setblocking(False)
                     self.sock.settimeout(0)
                 elif data.startswith('error'):
                     self.log(data)
@@ -89,8 +95,9 @@ class OOCSI:
 
             finally:
                 pass
-        except:
-            pass
+        except (RuntimeError, ConnectionError, OSError, BrokenPipeError) as e:
+            print("Error message:", e)
+            raise SystemExit(0)
 
     def log(self, message):
         """
@@ -99,7 +106,7 @@ class OOCSI:
         Args:
             message (str): Message to log.
         """
-        print('[{0}]: {1}'.format(self.handle, message))
+        print(("*** OOCSI:"),'[{0}]: {1}'.format(self.handle, message))
 
     def internalSend(self, msg):
         """
@@ -109,25 +116,46 @@ class OOCSI:
             msg (str): Message to send.
         """
         try:
-            self.sock.sendall((msg + '\n').encode())
+            self.sock.send((msg + '\n').encode())
         except:
             self.connected = False
-
-    async def check(self):
+        
+    def check(self):
         """
         Checks for incoming messages from the server and processes them.
         """
         try:
             buffer = bytearray(1024)
+            received_bytes = self.sock.recv_into(buffer)
+            data = buffer[:received_bytes].decode('utf-8')
+            lines = data.split("\n")
+            for line in lines:
+                if len(data) == 0:
+                    self.sock.close()
+                    self.connected = False
+                elif line.startswith('ping') or line.startswith('.'):
+                    self.internalSend('.')
+                elif line.startswith('{'):
+                    self.receive(json.loads(line))
+        except:
+            pass
+    
+    async def asyncCheck(self):
+        """
+        Asynchronously checks for incoming messages from the server and processes them.
+        """
+        try:
+            buffer = bytearray(1024)
             try:
+                # Create asynchronous task to check for new messages
                 socket_task = asyncio.create_task(self._recv_into(buffer))
                 received_bytes = await socket_task
-                
+
                 if received_bytes == 0:  # Connection closed by peer
                     self.sock.close()
                     self.connected = False
                     return
-                
+
                 data = buffer[:received_bytes].decode('utf-8')
                 lines = data.split("\n")
                 for line in lines:
@@ -146,6 +174,21 @@ class OOCSI:
         except Exception as e:
             self.log(f"Error in check: {str(e)}")
             pass
+
+    async def asyncLoop(self):
+        """Looping function to keep checking for oocsi updates every .2 seconds"""
+        while True:
+            try:
+                await self.asyncCheck()
+            except Exception as e:
+                print(f"Error in checkMessages: {str(e)}")
+            await asyncio.sleep(0.2)
+
+    async def keepAlive(self):
+        """Function to initiate the asynchronous loop"""
+        messages = asyncio.create_task(self.asyncLoop())
+        # Run both tasks at the same time independently from eachother
+        await asyncio.gather(messages)
 
     async def _recv_into(self, buffer):
         """

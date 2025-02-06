@@ -7,8 +7,9 @@ import socketpool
 import time
 import json
 import random
+import asyncio
 
-__author__ = 'matsfunk'
+__author__ = 'matsfunk, cyanogenbot'
 
 
 class OOCSI:
@@ -132,6 +133,47 @@ class OOCSI:
         except:
             pass
 
+    async def asyncCheck(self):
+        """
+        Asynchronously checks for incoming messages from the server and processes them.
+        """
+        try:
+            buffer = bytearray(1024)
+            try:
+                # Create asynchronous task to check for new messages
+                socket_task = asyncio.create_task(self._recv_into(buffer))
+                received_bytes = await socket_task
+                
+                if received_bytes == 0:  # Connection closed by peer
+                    self.sock.close()
+                    self.connected = False
+                    return
+                
+                data = buffer[:received_bytes].decode('utf-8')
+                lines = data.split("\n")
+                for line in lines:
+                    if line.startswith('ping') or line.startswith('.'):
+                        self.internalSend('.')
+                    elif line.startswith('{'):
+                        self.receive(json.loads(line))
+            except OSError as e:
+                if e.args[0] == 11:  # EAGAIN error
+                    pass  # No data available right now, that's okay
+                else:
+                    raise  # Re-raise other OSError types
+            except ConnectionError:
+                self.sock.close()
+                self.connected = False
+        except Exception as e:
+            self.log(f"Error in check: {str(e)}")
+            pass
+
+    async def _recv_into(self, buffer):
+        """
+        Helper method to handle socket receive operations asynchronously.
+        """
+        return self.sock.recv_into(buffer)
+    
     def receive(self, event):
         """
         Processes a received event message.
