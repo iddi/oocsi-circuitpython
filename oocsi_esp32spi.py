@@ -186,7 +186,7 @@ class OOCSI:
 
     async def keepAlive(self):
         """Function to initiate the asynchronous loop"""
-        messages = asyncio.create_task(self._async_loop())
+        messages = asyncio.create_task(self.asyncLoop())
         # Run both tasks at the same time independently from eachother
         await asyncio.gather(messages)
 
